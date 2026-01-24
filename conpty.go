@@ -58,9 +58,7 @@ func (h *handleIO) Close() error {
 	return windows.CloseHandle(h.handle)
 }
 
-// LocalConPty implements a local version of ConPty that allows setting flags
-// not exposed by the upstream library. Specifically, it enables passing
-// PSEUDOCONSOLE_INHERIT_CURSOR to prevent initial screen clearing.
+// LocalConPty implements a local version of ConPty
 type LocalConPty struct {
 	hpc                          _HPCON
 	pi                           *windows.ProcessInformation
@@ -285,7 +283,6 @@ type startOptions struct {
 type ConPtyOption func(*startOptions)
 
 // WithInheritCursor configures whether the pseudo console should inherit the cursor position.
-// If enabled, this prevents the initial screen clearing sequence (0x1b[2J) on startup.
 func WithInheritCursor(inherit bool) ConPtyOption {
 	return func(opts *startOptions) {
 		if inherit {
@@ -296,17 +293,14 @@ func WithInheritCursor(inherit bool) ConPtyOption {
 	}
 }
 
-// WithConsoleModeRaw configures the specific console handles to be in raw mode
-// and enables VT processing. This is useful when the calling application
-// is interactive and needs to handle input/output directly (e.g. not via SSH).
+// WithConsoleModeRaw configures the specific console handles to be in raw mode and enables VT processing
 func WithConsoleModeRaw() ConPtyOption {
 	return func(opts *startOptions) {
 		opts.rawConsole = true
 	}
 }
 
-// StartConPty starts a new process attached to a pseudo console with specific flags.
-// It accepts optional functional options to configure behavior, such as cursor inheritance.
+// StartConPty starts a new process attached to a pseudo console with specific options
 func StartConPty(commandLine string, width, height int, env []string, options ...ConPtyOption) (*LocalConPty, error) {
 	if !IsConPtyAvailable() {
 		return nil, fmt.Errorf("ConPty is not available")
@@ -330,16 +324,22 @@ func StartConPty(commandLine string, width, height int, env []string, options ..
 
 	hPc, err := win32CreatePseudoConsole(&coords, ptyIn, ptyOut, opts.flags)
 	if err != nil {
-		closeHandles(ptyIn, ptyOut, cmdIn, cmdOut)
-		// On older Windows builds where this flag might not be supported, this could fail?
-		// But checking docs, CreatePseudoConsole has supported dwFlags since introduction (though initially just 0).
-		// INHERIT_CURSOR was added in later versions (Win10 1809+).
-		// If it fails, we might want to fallback? But the goal is to fix it.
-		return nil, err
-	}
+		// If PSEUDOCONSOLE_INHERIT_CURSOR flag is set and creation failed,
+		// try again without it as a fallback.
+		// Both CreatePseudoConsole and PSEUDOCONSOLE_INHERIT_CURSOR were
+		// introduced in Windows 10 version 1809 (October 2018 Update), so there
+		// is no particular reason to believe that would fail for the cursor inheritance,
+		// but just in case there's some API discrepancy of some short.
+		if opts.flags&_PSEUDOCONSOLE_INHERIT_CURSOR != 0 {
+			hPc, err = win32CreatePseudoConsole(&coords, ptyIn, ptyOut, opts.flags&^_PSEUDOCONSOLE_INHERIT_CURSOR)
+		}
 
-	// We keep the handles open in the struct and close them in Close(),
-	// mimicking the behavior of the upstream library.
+		// If it still fails, return the error
+		if err != nil {
+			closeHandles(ptyIn, ptyOut, cmdIn, cmdOut)
+			return nil, err
+		}
+	}
 
 	pi, err := createConsoleProcessAttachedToPTY(hPc, commandLine, "", env)
 	if err != nil {
