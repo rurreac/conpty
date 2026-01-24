@@ -10,7 +10,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/rurrea/conpty"
+	"github.com/rurreac/conpty"
 )
 
 func main() {

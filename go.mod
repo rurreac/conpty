@@ -1,4 +1,4 @@
-module github.com/rurrea/conpty
+module github.com/rurreac/conpty
 
 go 1.24.3
 
