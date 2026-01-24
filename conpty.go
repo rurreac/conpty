@@ -302,6 +302,14 @@ func WithConsoleModeRaw() ConPtyOption {
 
 // StartConPty starts a new process attached to a pseudo console with specific options
 func StartConPty(commandLine string, width, height int, env []string, options ...ConPtyOption) (*LocalConPty, error) {
+	// Validate width and height. Size 0x0 will cause the process to fail to start.
+	// Better early erroring than overwriting size to minimum recommended size (80x25).
+	if width == 0 || height == 0 {
+		return nil, fmt.Errorf("width and height must be greater than 0")
+	}
+	coords := _COORD{int16(width), int16(height)}
+
+	// Check if ConPty is available
 	if !IsConPtyAvailable() {
 		return nil, fmt.Errorf("ConPty is not available")
 	}
@@ -310,8 +318,6 @@ func StartConPty(commandLine string, width, height int, env []string, options ..
 	for _, opt := range options {
 		opt(opts)
 	}
-
-	coords := _COORD{int16(width), int16(height)}
 
 	var cmdIn, cmdOut, ptyIn, ptyOut windows.Handle
 	if err := windows.CreatePipe(&ptyIn, &cmdIn, nil, 0); err != nil {
