@@ -277,6 +277,7 @@ func IsConPtyAvailable() bool {
 type startOptions struct {
 	flags      uint32
 	rawConsole bool
+	workDir    string
 }
 
 // ConPtyOption defines a functional option for configuring ConPTY
@@ -300,6 +301,14 @@ func WithConsoleModeRaw() ConPtyOption {
 	}
 }
 
+// WithWorkDir configures the working directory for the spawned process.
+// If dir is empty, the process inherits the current working directory of the caller.
+func WithWorkDir(dir string) ConPtyOption {
+	return func(opts *startOptions) {
+		opts.workDir = dir
+	}
+}
+
 // StartConPty starts a new process attached to a pseudo console with specific options
 func StartConPty(commandLine string, width, height int, env []string, options ...ConPtyOption) (*LocalConPty, error) {
 	// Validate width and height. Size 0x0 will cause the process to fail to start.
@@ -316,7 +325,9 @@ func StartConPty(commandLine string, width, height int, env []string, options ..
 
 	opts := &startOptions{}
 	for _, opt := range options {
-		opt(opts)
+		if opt != nil {
+			opt(opts)
+		}
 	}
 
 	var cmdIn, cmdOut, ptyIn, ptyOut windows.Handle
@@ -347,7 +358,7 @@ func StartConPty(commandLine string, width, height int, env []string, options ..
 		}
 	}
 
-	pi, err := createConsoleProcessAttachedToPTY(hPc, commandLine, "", env)
+	pi, err := createConsoleProcessAttachedToPTY(hPc, commandLine, opts.workDir, env)
 	if err != nil {
 		closeHandles(ptyIn, ptyOut, cmdIn, cmdOut)
 		win32ClosePseudoConsole(hPc)
